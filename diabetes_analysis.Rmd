@@ -1,0 +1,615 @@
+---
+title: "Diabetes Risk Analysis - Complete Reproducible Code"
+author: "Vobo Godlove Watoh"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+
+# Load tidyverse for data manipulation (dplyr, tidyr) and visualization (ggplot2)
+# This is the core package suite for most data analysis tasks in R
+library(tidyverse)
+
+# Load skimr for comprehensive data exploration summaries
+# Provides a quick overview of variable types, missing values, and distributions
+library(skimr)
+
+# Load janitor for data cleaning utilities
+# Functions include: clean_names(), remove_empty(), tabyl() for frequency tables
+library(janitor)
+
+# Load readr for efficient CSV file import
+# read_csv() is faster than base R's read.csv() and provides better type inference
+library(readr)
+
+```
+
+
+```{r}
+# ================================================================
+# PHASE I: DATA CLEANING
+# ================================================================
+
+# Load the Pima Indians Diabetes Dataset from local file
+# Update the file path to match your directory structure if needed
+Diabetes <- read_csv("~/Desktop/Data Analysis Project /Diabetes_Risk_Analysis/Data/diabetes.csv")
+
+# View the dataset in a spreadsheet-like viewer (RStudio only)
+view(Diabetes)
+
+# Attach the dataset to allow direct column name access
+# (Alternative: use data$column notation to avoid potential conflicts)
+attach(Diabetes)
+
+# Basic Dataset summary: min, max, mean, median, quartiles for each variable
+summary(Diabetes)
+
+# Comprehensive data exploration with skimr
+# Shows variable types, missing values, means, standard deviations, histograms
+skim(Diabetes)
+
+```
+
+
+```{r}
+# ================================================================
+# PHASE I(a): DETECT MEDICALLY IMPLAUSIBLE ZERO VALUES
+# ================================================================
+
+# Count how many zeros exist in each column
+# This helps identify variables where zero is biologically impossible
+colSums(Diabetes == 0)
+
+# Specifically check physiological variables where zero is clinically implausible
+# Glucose: plasma glucose cannot be 0 in a living individual
+# BloodPressure: diastolic blood pressure cannot be 0
+# SkinThickness: triceps skinfold thickness cannot be 0
+# Insulin: serum insulin cannot be 0
+# BMI: Body Mass Index cannot be 0
+sapply(Diabetes[, c("Glucose", "BloodPressure", "SkinThickness", "Insulin", "BMI")],
+       function(x) sum(x == 0))
+
+# Converting impossible zeros to missing values (NA)
+# This ensures we don't treat biologically impossible values as valid measurements
+Diabetes_clean <- Diabetes
+
+# Define variables to clean
+vars <- c("Glucose", "BloodPressure", "SkinThickness", "Insulin", "BMI")
+
+# Replace all zeros with NA in the specified columns
+# lapply applies the replacement function to each column in vars
+Diabetes_clean[vars] <- lapply(Diabetes_clean[vars], function(x) replace(x, x == 0, NA))
+
+# Verifying that number of NA matches number of zeros
+# This confirms our replacement worked correctly
+colSums(is.na(Diabetes_clean))
+
+# Calculate missing value percentage for each variable
+# This helps decide which imputation strategy is appropriate
+missing_pct <- round(colMeans(is.na(Diabetes_clean)) * 100, 2)
+missing_pct
+```
+
+
+```{r}
+# ================================================================
+# PHASE I(b): MISSING DATA IMPUTATION (MEDIAN IMPUTATION)
+# ================================================================
+
+# Imputing Missing Values using median imputation
+# Median is preferred over mean because:
+# - It is robust to extreme values/outliers
+# - Less sensitive to skewed distributions
+# - Common in clinical research for its simplicity and transparency
+Diabetes_inputed <- Diabetes_clean
+
+# Loop through each variable and replace NA with the column median
+for (v in vars) {
+  Diabetes_inputed[[v]][is.na(Diabetes_inputed[[v]])] <- median(Diabetes_inputed[[v]], na.rm = TRUE)
+}
+
+# Verify no missing values remain after imputation
+colSums(is.na(Diabetes_inputed))
+
+# Saving the cleaned dataset for future use
+# row.names = FALSE prevents saving row numbers as a separate column
+write.csv(Diabetes_inputed, 
+          "~/Desktop/Data Analysis Project /Diabetes_Risk_Analysis/Data/Diabetes_clean.csv", 
+          row.names = FALSE)
+```
+
+
+```{r}
+# ================================================================
+# PHASE II(a): EXPLORATORY DATA ANALYSIS (EDA) WITH CLEAN DATA
+# ================================================================
+
+# Reload necessary packages for EDA (already loaded but explicit for clarity)
+library(tidyverse)
+library(ggplot2)
+library(GGally)  # For ggpairs() - extended pair plots with correlation and distributions
+
+# Load the cleaned dataset
+Diabetes_inputed <- read_csv("~/Desktop/Data Analysis Project /Diabetes_Risk_Analysis/Data/Diabetes_clean.csv")
+
+# Frequency table: 0 = No Diabetes, 1 = Diabetes
+table(Diabetes_inputed$Outcome)
+
+# Proportion of diabetic and non-diabetic participants
+# This checks class balance for classification modeling
+prop.table(table(Diabetes_inputed$Outcome))
+```
+
+
+```{r}
+# ================================================================
+# PHASE II(b): VISUALIZATION - DISTRIBUTION OF OUTCOME
+# ================================================================
+
+# Set working directory for saving output files
+# Update this path to your desired output location
+setwd("~/Desktop/Data Analysis Project /Diabetes_Risk_Analysis")
+
+# Plot 1: Bar chart of Diabetes Outcome Distribution
+# Shows the count of non-diabetic (0) vs diabetic (1) participants
+plot1 <- ggplot(Diabetes_inputed, aes(x = factor(Outcome), fill = factor(Outcome))) +
+  scale_fill_manual(
+    name = "Diabetes Status",
+    values = c("0" = "blue4", "1" = "red4"),
+    labels = c("0" = "Non-Diabetic", "1" = "Diabetic")
+  ) +
+  geom_bar() +
+  theme_minimal() +
+  labs(
+    title = "Diabetes Outcome distribution",
+    x = "Outcome",
+    y = "Count"
+  )
+plot1
+
+# Save plot as high-resolution TIFF for publication
+ggsave("Distribution_outcome.tiff", plot1)
+
+```
+
+
+```{r}
+# ================================================================
+# PHASE II(c): VISUALIZATION - AGE DISTRIBUTION
+# ================================================================
+
+# Plot 2: Histogram of Age Distribution by Diabetes Status
+# Overlaid histograms with dodge position to compare age distributions
+plot2 <- ggplot(Diabetes_inputed, aes(x = Age, fill = factor(Outcome))) +
+  scale_fill_manual(
+    name = "Diabetes Status",
+    values = c("0" = "blue4", "1" = "red4"),
+    labels = c("0" = "Non-Diabetic", "1" = "Diabetic")
+  ) +
+  geom_histogram(bins = 20, position = "dodge") +
+  theme_minimal() +
+  labs(
+    title = "Age Distribution"
+  )
+plot2
+ggsave("Age_Distribution.tiff", plot2)
+
+```
+
+
+```{r}
+# ================================================================
+# PHASE II(d): VISUALIZATION - BMI DISTRIBUTION
+# ================================================================
+
+# Plot 3: Histogram of BMI Distribution by Diabetes Status
+plot3 <- ggplot(Diabetes_inputed, aes(x = BMI, fill = factor(Outcome))) +
+  scale_fill_manual(
+    name = "Diabetes Status",
+    values = c("0" = "blue4", "1" = "red4"),
+    labels = c("0" = "Non-Diabetic", "1" = "Diabetic")
+  ) +
+  geom_histogram(bins = 20, position = "dodge") +
+  theme_minimal() +
+  labs(
+    title = "BMI Distribution"
+  )
+plot3
+ggsave("BMI_Distribution.tiff", plot3)
+
+```
+
+
+
+```{r}
+# ================================================================
+# PHASE II(e): VISUALIZATION - BOXPLOTS BY DIABETES STATUS
+# ================================================================
+
+# Plot 4a: Boxplot of Glucose by Diabetes Status
+# Shows median, quartiles, and outliers for each group
+plot4a <- ggplot(Diabetes_inputed, aes(x = factor(Outcome), y = Glucose, fill = factor(Outcome))) +
+  scale_fill_manual(
+    name = "Diabetes Status",
+    values = c("0" = "blue4", "1" = "red4"),
+    labels = c("0" = "Non-Diabetic", "1" = "Diabetic")
+  ) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(
+    title = "Glucose by Diabetic Status",
+    x = "Outcome"
+  )
+
+# Plot 4b: Boxplot of BMI by Diabetes Status
+plot4b <- ggplot(Diabetes_inputed, aes(x = factor(Outcome), y = BMI, fill = factor(Outcome))) +
+  scale_fill_manual(
+    name = "Diabetes Status",
+    values = c("0" = "blue4", "1" = "red4"),
+    labels = c("0" = "Non-Diabetic", "1" = "Diabetic")
+  ) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(
+    title = "BMI by Diabetic Status",
+    x = "Outcome"
+  )
+
+# Plot 4c: Boxplot of Age by Diabetes Status
+plot4c <- ggplot(Diabetes_inputed, aes(x = factor(Outcome), y = Age, fill = factor(Outcome))) +
+  scale_fill_manual(
+    name = "Diabetes Status",
+    values = c("0" = "blue4", "1" = "red4"),
+    labels = c("0" = "Non-Diabetic", "1" = "Diabetic")
+  ) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(
+    title = "Age by Diabetic Status",
+    x = "Outcome"
+  )
+
+# Display the individual plots
+plot4a
+plot4b
+plot4c
+
+# Save individual plots
+ggsave("Glucose by Diabetic Status.tiff", plot4a)
+ggsave("BMI by Diabetic Status.tiff", plot4b)
+ggsave("Age by Diabetic Status.tiff", plot4c)
+
+```
+
+
+```{r}
+# ================================================================
+# PHASE II(f): WRAP ALL PLOTS TOGETHER
+# ================================================================
+
+# Load patchwork for combining multiple ggplot objects into a single figure
+library(patchwork)
+
+# Combine all plots into one composite figure with a title
+all_plot <- plot1 + plot2 + plot3 + plot4a + plot4b + plot4c +
+  plot_annotation(title = "Variable Distribution")
+
+# Save the composite figure as a high-resolution TIFF
+# width and height in inches, dpi = 300 for publication quality
+ggsave("All plots.tiff", all_plot, width = 12, height = 8, dpi = 300)
+```
+
+
+```{r}
+# ================================================================
+# PHASE II(g): CORRELATION ANALYSIS
+# ================================================================
+
+# Load corrplot for correlation matrix visualization
+library(corrplot)
+
+# Plot 5: Correlation Analysis
+# Select only numeric predictor variables (exclude the outcome column)
+numeric_data <- Diabetes_inputed %>%
+  select(-Outcome)  # -Outcome selects all columns except Outcome
+
+# Compute correlation matrix for all numeric predictors
+cor_matrix <- cor(numeric_data)
+
+# Display correlation matrix rounded to 2 decimal places
+round(cor_matrix, 2)
+
+# Save correlation plot as TIFF for publication
+tiff("Correlation.tiff", 
+     res = 300,
+     width = 9, 
+     height = 9,
+     units = "in",
+     compression = "lzw")
+
+# Create correlation plot with colored cells and upper triangular layout
+corrplot(cor_matrix, method = "color", type = "upper")
+dev.off()  # Close the graphics device to save the file
+
+```
+
+
+```{r}
+# ================================================================
+# PHASE II(h): SUMMARY TABLE BY OUTCOME
+# ================================================================
+
+# Compute mean values of key variables grouped by diabetes status
+# This provides descriptive statistics for the main clinical characteristics
+mean_f_4 <- Diabetes_inputed %>%
+  group_by(Outcome) %>%
+  summarise(
+    Mean_Age = mean(Age),
+    Mean_Glucose = mean(Glucose),
+    Mean_BMI = mean(BMI),
+    Mean_Insulin = mean(Insulin)
+  )
+
+# Reshape data from wide to long format for easier plotting
+# This transformation prepares the data for grouped bar charts
+data_frame_mean <- data.frame(mean_f_4) %>%
+  pivot_longer(cols = -Outcome, names_to = "Variables", values_to = "Mean")
+data_frame_mean
+
+```
+
+
+```{r}
+# ================================================================
+# PHASE II(i): VISUALIZATION - MEAN CHARACTERISTICS COMPARISON
+# ================================================================
+
+# Plot 6: Grouped bar chart comparing mean clinical characteristics
+# This visualizes the summary table from above
+plot5 <- ggplot(data_frame_mean, aes(x = Variables, y = Mean, fill = factor(Outcome))) +
+  geom_col(position = "dodge") +
+  theme_minimal() +
+  coord_flip() +  # Flip coordinates for easier reading of variable names
+  scale_fill_manual(
+    name = "Diabetes Status",
+    values = c("0" = "blue4", "1" = "red4"),
+    labels = c("0" = "Non-Diabetic", "1" = "Diabetic")
+  ) +
+  labs(
+    title = "Mean characteristics Comparison",
+    x = "Outcome"
+  )
+plot5
+ggsave("Mean characteristics Comparison.tiff", plot5)
+
+```
+
+
+```{r}
+# ================================================================
+# PHASE III(a): FORMAL STATISTICAL TESTING (T-TESTS)
+# ================================================================
+
+# Independent-samples t-tests to compare means of diabetic and non-diabetic patients
+# Each test compares Group 0 (non-diabetic) vs Group 1 (diabetic)
+
+# Test 1: Age
+t.test(Age ~ Outcome, data = Diabetes_inputed)
+
+# Test 2: Glucose
+t.test(Glucose ~ Outcome, data = Diabetes_inputed)
+
+# Test 3: BMI
+t.test(BMI ~ Outcome, data = Diabetes_inputed)
+
+# Test 4: Insulin
+t.test(Insulin ~ Outcome, data = Diabetes_inputed)
+
+# ================================================================
+
+```
+
+
+```{r}
+# PHASE III(b): EFFECT SIZE ESTIMATION (COHEN'S D)
+# ================================================================
+
+# Load effsize package for Cohen's d calculation
+library(effsize)
+
+# Calculate Cohen's d for each variable
+# Cohen's d measures the standardized difference between two means
+# Values: 0.2 = small, 0.5 = medium, 0.8 = large, >1.0 = very large
+cohen.d(Age ~ Outcome, data = Diabetes_inputed)
+cohen.d(Glucose ~ Outcome, data = Diabetes_inputed)
+cohen.d(BMI ~ Outcome, data = Diabetes_inputed)
+cohen.d(Insulin ~ Outcome, data = Diabetes_inputed)
+
+```
+
+
+```{r}
+# ================================================================
+# PHASE III(c): VISUALIZATION - COHEN'S D EFFECT SIZES
+# ================================================================
+
+# Create a data frame with Cohen's d values for each predictor
+# These values are manually entered from the output above
+cohens_d <- data.frame(
+  Predictors = c("Age", "Glucose", "BMI", "Insulin"),
+  effsize = c(0.51, 1.19, 0.69, 0.44)
+)
+cohens_d
+
+# Plot 6: Bar chart of Cohen's d effect sizes
+# This visualizes which variables have the largest practical significance
+plot6 <- ggplot(cohens_d, aes(x = Predictors, y = effsize, fill = Predictors)) +
+  geom_col() +
+  theme_minimal() +
+  labs(title = "Cohen's d Effect Sizes", x = "Predictors", y = "Cohen's d")
+plot6
+ggsave("Cohen d.tiff", plot6)
+
+```
+
+
+```{r}
+# ================================================================
+# PHASE IV(a): LOGISTIC REGRESSION MODELING
+# ================================================================
+
+# Logistic Regression: Determines which variables remain significant predictors
+# of diabetes after adjusting for all other variables
+
+# Load sjPlot for model visualization (coefficient plots, tables)
+# This package provides tab_model() and plot_model() for publication-ready outputs
+library(sjPlot)
+
+# Fit logistic regression model
+# Outcome is binary (0 = non-diabetic, 1 = diabetic)
+# Predictors include all clinical and demographic variables
+logi_model <- glm(
+  Outcome ~ Pregnancies + Glucose + BloodPressure + SkinThickness +
+            Insulin + BMI + DiabetesPedigreeFunction + Age,
+  Diabetes_inputed,
+  family = binomial(link = "logit")
+)
+
+# Display model summary
+# Shows coefficients, standard errors, z-values, p-values, and deviance statistics
+summary(logi_model)
+
+# Display odds ratios (exponentiated coefficients)
+# OR > 1 indicates increased risk; OR < 1 indicates decreased risk
+exp(coef(logi_model))
+
+# Display odds ratios with 95% confidence intervals
+# Provides a range of plausible values for each odds ratio
+exp(confint(logi_model))
+
+# Coefficient plot with 95% confidence intervals for all predictors
+# This visualizes which variables are statistically significant
+# (Those whose confidence intervals do not cross zero)
+tab_model(logi_model)  # Gives OR, CI, p-values in a formatted table
+
+# Create coefficient plot for publication
+confi_plot <- plot_model(logi_model, title = "Coefficient plot with 95% confidence intervals for all predictors") +
+  theme_sjplot2()
+ggsave("Confidence interval.tiff", confi_plot, width = 12, height = 8, dpi = 300)
+
+```
+
+
+```{r}
+# ================================================================
+# PHASE IV(b): PREDICTED PROBABILITIES AND CLASSIFICATION
+# ================================================================
+
+# Generate predicted probability of diabetes for every patient
+pred_prob <- predict(logi_model, type = "response")
+
+# Display first few predicted probabilities
+head(pred_prob)
+
+# Convert probabilities into class predictions using threshold 0.5
+# If probability > 0.5, classify as diabetic (1); otherwise non-diabetic (0)
+pred_class <- ifelse(pred_prob > 0.5, 1, 0)
+
+# Display first few predicted classes
+head(pred_class)
+
+```
+
+
+```{r}
+# ================================================================
+# PHASE IV(c): CONFUSION MATRIX AND PERFORMANCE METRICS
+# ================================================================
+
+# Confusion Matrix: Compare actual outcomes with predicted outcomes
+# Shows correct and incorrect classifications
+confusion_matrix <- table(Actual = Diabetes_inputed$Outcome, Predicted = pred_class)
+confusion_matrix
+
+# Accuracy: Proportion of correctly classified patients
+accuracy <- mean(pred_class == Diabetes_inputed$Outcome)
+accuracy
+
+# Sensitivity (True Positive Rate): Proportion of actual diabetics correctly identified
+# TP / (TP + FN) — higher sensitivity means fewer missed diabetics
+sensitivity <- confusion_matrix[2, 2] / (confusion_matrix[2, 1] + confusion_matrix[2, 2])
+sensitivity
+
+# Specificity (True Negative Rate): Proportion of actual non-diabetics correctly identified
+# TN / (TN + FP) — higher specificity means fewer false alarms
+specificity <- confusion_matrix[1, 1] / (confusion_matrix[1, 1] + confusion_matrix[1, 2])
+specificity
+
+# ================================================================
+```
+
+
+```{r}
+# PHASE IV(d): MULTICOLLINEARITY DIAGNOSTICS
+# ================================================================
+
+# Load car package for Variance Inflation Factor (VIF) calculation
+library(car)
+
+# Calculate VIF for all predictors
+# VIF > 5 indicates moderate multicollinearity; VIF > 10 indicates serious concern
+# Values close to 1 indicate no multicollinearity
+vif(logi_model)
+```
+
+
+
+```{r}
+# ================================================================
+# PHASE V: RECEIVER OPERATING CHARACTERISTIC (ROC) CURVE
+# ================================================================
+
+# Load pROC package for ROC analysis and AUC calculation
+library(pROC)
+
+# Create ROC curve object
+# Compares predicted probabilities with actual outcomes
+roc_obj <- roc(response = Diabetes_inputed$Outcome, predictor = pred_prob)
+
+# Display ROC curve object
+# Shows AUC value and thresholds
+roc_obj
+
+# Display AUC value (Area Under the ROC Curve)
+# AUC interpretation:
+# 0.50 = No discrimination, 0.60-0.70 = Poor, 0.70-0.80 = Fair
+# 0.80-0.90 = Good, 0.90-1.00 = Excellent
+auc(roc_obj)
+
+# Plot ROC curve as high-resolution TIFF for publication
+tiff("ROC Curve for Diabetes Prediction Model.tiff", 
+     res = 300,
+     width = 5, 
+     height = 5,
+     units = "in",
+     compression = "lzw")
+
+# Create ROC plot with red curve
+# The curve should be substantially above the diagonal (no-discrimination line)
+plot(roc_obj, main = "ROC Curve for Diabetes Prediction Model", col = "red4")
+dev.off()  # Close graphics device to save file
+```
+
+
