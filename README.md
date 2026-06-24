@@ -14,8 +14,8 @@ The analysis demonstrates a complete biostatistical workflow including data clea
 |-------------|-------------|
 | `diabetes_analysis.Rmd` | Complete R Markdown source file |
 | `diabetes_analysis.html` | Knitted HTML output (view in browser) |
-| `data/diabetes.csv` | Original Pima Indians Diabetes Dataset |
-| `data/Diabetes_clean.csv` | Cleaned dataset after imputation |
+| `diabetes.csv` | Original Pima Indians Diabetes Dataset |
+| `Diabetes_clean.csv` | Cleaned dataset after imputation |
 | `figures/` | All figures in high-resolution TIFF format |
 | `README.md` | This file |
 
