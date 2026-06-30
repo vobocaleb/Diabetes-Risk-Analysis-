@@ -1,5 +1,6 @@
 # Diabetes Risk Analysis - Reproducible R Code
-
+Archived version (Zenodo DOI):
+https://doi.org/10.5281/zenodo.21060002
 ## Overview
 
 This repository contains the complete reproducible analysis for the paper:
